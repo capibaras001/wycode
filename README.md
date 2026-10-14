@@ -22,11 +22,11 @@ To inspect the installer first, download it from this repository and run it loca
 
 ```sh
 curl -fsSL https://raw.githubusercontent.com/capibaras001/wycode/main/install.sh -o install.sh
-WYCODE_VERSION=v0.1.1 WYCODE_INSTALL_DIR="$HOME/bin" bash install.sh
+WYCODE_VERSION=v0.1.2 WYCODE_INSTALL_DIR="$HOME/bin" bash install.sh
 ```
 
 ```powershell
-$env:WYCODE_VERSION = 'v0.1.1'
+$env:WYCODE_VERSION = 'v0.1.2'
 $env:WYCODE_INSTALL_DIR = "$env:USERPROFILE\bin"
 irm https://raw.githubusercontent.com/capibaras001/wycode/main/install.ps1 | iex
 ```
@@ -66,6 +66,8 @@ Run assessments only against systems you own or are authorized to test. `wycode`
 ## Docker lifecycle
 
 Assessments run tools in a Docker sandbox. wycode detects an existing Docker engine, installs or starts a supported local engine when needed, and pulls the sandbox image. Initial setup can require administrator privileges, a platform installer, or a Windows WSL restart; follow the displayed prompts. Existing running engines stay running. An engine started by wycode is stopped when its final assessment lease closes. Closing an assessment cleans up its owned sandbox resources.
+
+If Docker setup fails, the interactive chat still opens and shows a concise warning. Assessments require a reachable Linux Docker engine. Check `docker info` and your service's logs; on restricted hosts that cannot run Docker, configure a reachable engine with `DOCKER_HOST` or use a host that supports Docker. An installed Docker CLI alone does not provide a running engine.
 
 ## Release platforms
 
