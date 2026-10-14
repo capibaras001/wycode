@@ -1,0 +1,9 @@
+wycode is derived from strix (https://github.com/usestrix/strix),
+Copyright 2025 usestrix, licensed under the Apache License, Version 2.0.
+
+The strix project is used as the reference implementation and source of the
+skill packs ported into this package. No strix source code is vendored into
+this package; the TypeScript implementation is a rewrite.
+
+A copy of the Apache License, Version 2.0 is available at
+https://www.apache.org/licenses/LICENSE-2.0
