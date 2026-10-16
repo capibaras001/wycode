@@ -22,11 +22,11 @@ To inspect the installer first, download it from this repository and run it loca
 
 ```sh
 curl -fsSL https://raw.githubusercontent.com/capibaras001/wycode/main/install.sh -o install.sh
-WYCODE_VERSION=v0.1.3 WYCODE_INSTALL_DIR="$HOME/bin" bash install.sh
+WYCODE_VERSION=v0.1.4 WYCODE_INSTALL_DIR="$HOME/bin" bash install.sh
 ```
 
 ```powershell
-$env:WYCODE_VERSION = 'v0.1.3'
+$env:WYCODE_VERSION = 'v0.1.4'
 $env:WYCODE_INSTALL_DIR = "$env:USERPROFILE\bin"
 irm https://raw.githubusercontent.com/capibaras001/wycode/main/install.ps1 | iex
 ```
@@ -61,26 +61,21 @@ wycode scan https://your-authorized-target.example --dry-run
 wycode scan https://your-authorized-target.example --model kimi-k3 --effort high
 ```
 
-Run assessments only against systems you own or are authorized to test. `wycode` opens the native interactive TUI. `wycode scan <target>` runs headlessly; `--dry-run` prints the scan plan without starting Docker or running an assessment. Headless exit codes are `0` for a clean assessment, `2` for findings above medium severity, and `1` for an infrastructure failure or truncated assessment.
+Run assessments only against systems you own or are authorized to test. `wycode` opens the native interactive TUI. `wycode scan <target>` runs headlessly; `--dry-run` prints the scan plan without running commands or contacting the model. Headless exit codes are `0` for a clean assessment, `2` for findings above medium severity, and `1` for an infrastructure failure or truncated assessment.
 
-## Docker lifecycle
+## Bash execution
 
-Assessments normally run tools in a Docker sandbox. wycode detects an existing Docker engine, installs or starts a supported local engine when needed, and pulls the sandbox image. The startup screen shows installation, disk checks, download progress, engine startup, and image preparation. Initial setup can require administrator privileges, a platform installer, or a Windows WSL restart; follow the displayed prompts. Existing running engines stay running. An engine started by wycode is stopped when its final assessment lease closes. Closing an assessment cleans up its owned sandbox resources.
+Assessment commands run directly through Bash in the selected project directory with your account's permissions and environment. File tools read and write real host files. Bash must be on PATH; on Windows, install Git Bash and add its `bin` directory to PATH. Security tools, Python packages, browsers, and proxies use the host's existing setup and are not provisioned automatically.
 
-Installer downloads check free space and can fall back to `/tmp`. Before pulling a missing sandbox image, wycode estimates download and extraction space on the Docker daemon's filesystem. If primary storage is insufficient and the daemon's `/tmp` has room, wycode starts an owned temporary Docker engine with its data in `/tmp/wycode-engine-*`. It removes that engine and its data on normal exit or handled cancellation. A forced process kill can leave those resources behind. The fallback needs privileged containers and enough primary space for its small helper and engine images. `/tmp` on the same filesystem cannot add capacity; Docker Desktop and remote contexts use the daemon host's `/tmp`.
+Each shell call starts a fresh Bash process. Changes to shell variables or the working directory do not persist between calls. Native assessments retain their permission prompts. Cancellation stops owned command processes and leaves assessment files and reports intact. The default TUI uses a private server for its lifetime.
 
-If Docker setup fails, the interactive chat still opens and shows a concise warning. Docker mode requires a reachable Linux Docker engine. Check `docker info` and your service's logs; on restricted hosts that cannot run Docker, configure a reachable engine with `DOCKER_HOST` or use Kali host mode below. An installed Docker CLI alone does not provide a running engine.
+The old leading `--nodocker` flag is accepted for compatibility; Bash is now the default on supported hosts. WYCODE does not install, start, stop, or manage Docker engines or containers.
 
-## Kali host mode
+## Assessment reports
 
-On Kali Linux, run assessment tools directly on the host:
+When an assessment ends, WYCODE saves `report.md` and `report.json` and shows the report in chat or headless output. Reports include findings, the assessment summary, documented coverage, unresolved work, and next options. Unverified candidates remain separate from findings. Failed or unfinished child tasks produce an incomplete report instead of a successful assessment.
 
-```sh
-wycode --nodocker
-wycode scan https://your-authorized-target.example --nodocker
-```
-
-wycode checks `/etc/os-release` for Kali before enabling this mode. Shell commands run in the selected project directory with your account's permissions, and file tools access the host filesystem. Docker installation and image downloads are skipped. Native assessments retain their permission prompts; cancellation stops owned shell processes and leaves host files intact. The TUI uses a private server for this invocation so the selected execution mode stays consistent. Existing assessments retain their original execution mode and fail clearly if opened under a conflicting mode.
+Completed assessments are not rerun after a server restart. Legacy Docker assessments require a new `/start <target>` assessment before commands can run through Bash.
 
 ## Streaming and cache
 
