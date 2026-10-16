@@ -1,0 +1,974 @@
+--- /dev/null
++++ b/packages/wycode/src/progress.ts
+@@ -0,0 +1,32 @@
++import type { ScanPlanTask } from "./tools/scan-plan"
++
++/** A read model of the recorded plan; no lifecycle or task state is changed here. */
++export function scanProgress(tasks: readonly ScanPlanTask[]) {
++  const done = new Set(tasks.filter((task) => task.status === "done").map((task) => task.task_id))
++  const items = tasks.map((task) => {
++    const waiting = task.depends_on.filter((id) => !done.has(id))
++    const status =
++      (task.status === "pending" || task.status === "in_progress") && waiting.length
++        ? "blocked"
++        : task.status === "done"
++          ? "completed"
++          : task.status === "in_progress"
++            ? "running"
++            : task.status
++    const reason = [task.result, waiting.length ? `Waiting for ${waiting.join(", ")}` : undefined].filter(Boolean).join(" · ")
++    return {
++      id: task.task_id,
++      title: task.title,
++      status,
++      ...(reason ? { reason } : {}),
++    }
++  })
++  return {
++    completed: items.filter((task) => task.status === "completed").length,
++    running: items.filter((task) => task.status === "running").length,
++    pending: items.filter((task) => task.status === "pending").length,
++    blocked: items.filter((task) => task.status === "blocked").length,
++    cancelled: items.filter((task) => task.status === "cancelled").length,
++    tasks: items,
++  }
++}
+--- /dev/null
++++ b/packages/wycode/src/progress.test.ts
+@@ -0,0 +1,23 @@
++import { expect, test } from "bun:test"
++import { createScanToolSet } from "./scan-tools"
++import { fakeContext, fakeExecution } from "./tools/testkit"
++
++test("progress distinguishes recorded work and blocked prerequisites without changing tasks", async () => {
++  const scan = createScanToolSet("fixture")
++  const plan = scan.tools.find((tool) => tool.name === "scan_plan")!
++  const ctx = fakeContext(fakeExecution().execution)
++  const tasks = [
++    { task_id: "done", status: "done", result: "Verified" },
++    { task_id: "active", status: "in_progress" },
++    { task_id: "ready", status: "pending" },
++    { task_id: "blocked", status: "blocked", result: "Need fixture account", depends_on: ["active"] },
++    { task_id: "dependent", status: "pending", depends_on: ["active"] },
++    { task_id: "cancelled", status: "cancelled", result: "Out of agreed scope" },
++  ].map((item) => ({ title: item.task_id, target: "fixture", hypothesis: "Bounded check", validation: "Fixture witness", ...item }))
++  expect(JSON.parse(await plan.execute({ action: "create", tasks }, ctx)).success).toBe(true)
++  expect(scan.progress().summary).toMatchObject({ completed: 1, running: 1, pending: 1, blocked: 2, cancelled: 1 })
++  expect(scan.progress().summary.tasks).toContainEqual({ id: "dependent", title: "dependent", status: "blocked", reason: "Waiting for active" })
++  expect(scan.progress().summary.tasks).toContainEqual({ id: "blocked", title: "blocked", status: "blocked", reason: "Need fixture account · Waiting for active" })
++  await plan.execute({ action: "update", task_id: "active", patch: { status: "done", result: "Checked" } }, ctx)
++  expect(scan.progress().summary).toMatchObject({ completed: 2, running: 0, pending: 2, blocked: 1 })
++})
+--- a/packages/wycode/src/scan-tools.ts
++++ b/packages/wycode/src/scan-tools.ts
+@@ -2,6 +2,7 @@
+ import { type NewFinding } from "./report/store"
+ import type { ReportStatus } from "./report/writer"
+ import type { Tool } from "./tool"
++import { scanProgress } from "./progress"
+ import {
+   createCoverageTool,
+   createFinishScanTool,
+@@ -63,6 +64,14 @@
+       })
+       findingChain.reconcile()
+       onFinding?.(finding)
++    }, (note) => {
++      if (note.category !== "findings") return
++      const header = note.content.split(/\r?\n\r?\n|^##/m, 1)[0]
++      const severity = header.split(/\r?\n/).filter((line) => /^Severity:/i.test(line))
++      if (severity.length !== 1 || !/^Severity:[ \t]*(critical|high|medium|low|info)[ \t]*$/i.test(severity[0]))
++        return "Finding requires Severity: critical, high, medium, low or info. Correct the Severity header; save unverified observations as category questions."
++      if (!parseFindingNote(note.title, note.content, target).evidence.trim())
++        return "Finding requires a non-empty ## Evidence section with the observed result. Add supporting evidence, or save the candidate as category questions."
+     }),
+     coverage,
+     threatModel("root"),
+@@ -86,7 +95,7 @@
+     goalTool: (canDefine = true) => createGoalTool(goal, canDefine),
+     goal: goal.snapshot,
+     setGoal: goal.set,
+-    progress: () => ({ goal: goal.snapshot(), next: plan.next() }),
++    progress: () => ({ goal: goal.snapshot(), next: plan.next(), summary: scanProgress(plan.snapshot()) }),
+     findings: () => materialize(findingNotes),
+     findingSources: () => structuredClone([...findingNotes.values()]),
+     reportState: () => ({
+--- a/packages/wycode/src/scan-tools.test.ts
++++ b/packages/wycode/src/scan-tools.test.ts
+@@ -94,3 +94,30 @@
+   expect(finding.evidence).toBe(evidence)
+   expect(finding.remediation).toBe("Actual fix")
+ })
++
++
++test("new findings reject invalid severity and empty evidence atomically", async () => {
++  const { createScanToolSet } = await import("./scan-tools")
++  const { fakeContext, fakeExecution } = await import("./tools/testkit")
++  const scan = createScanToolSet("fixture")
++  const note = scan.tools.find((tool) => tool.name === "note")!
++  const ctx = fakeContext(fakeExecution().execution)
++  const create = { action: "create", category: "findings", title: "Fixture finding" }
++  for (const [content, field] of [
++    ["Severity: urgent\n\n## Evidence\nFixture witness", "Severity"],
++    ["Severity: high\n\n## Evidence\n  ", "Evidence"],
++  ]) {
++    const result = JSON.parse(await note.execute({ ...create, content }, ctx))
++    expect(result.success).toBe(false)
++    expect(result.error).toContain(field)
++    expect(scan.findings()).toEqual([])
++  }
++  const content = "Severity: high\n\n## Description\nFixture boundary\n\n## Evidence\nAllowed=200; denied=403"
++  const saved = JSON.parse(await note.execute({ ...create, content }, ctx))
++  expect(saved.success).toBe(true)
++  const result = JSON.parse(await note.execute({ action: "update", note_id: saved.note_id, title: "Changed", content: "Severity: nonsense" }, ctx))
++  expect(result.success).toBe(false)
++  expect(scan.findings()).toMatchObject([{ title: "Fixture finding", severity: "high", evidence: "Allowed=200; denied=403" }])
++  const stored = JSON.parse(await note.execute({ action: "get", note_id: saved.note_id }, ctx))
++  expect(stored.note).toMatchObject({ title: "Fixture finding", content })
++})
+--- a/packages/wycode/src/tools/note.ts
++++ b/packages/wycode/src/tools/note.ts
+@@ -34,10 +34,15 @@
+ - list: optional filters "category", "tags" (matches notes having any of them), "search" (substring over title/content). Entries carry a "content_preview" unless "include_content" is true.
+ - get: "note_id" returns the full note.
+ - update: "note_id" plus any of "title" / "content" / "tags"; omitted fields stay unchanged. Content replacement is a full overwrite.
+-- delete: "note_id".`
++- delete: "note_id".
++
++Assessment findings require an explicit valid Severity header and a non-empty ## Evidence section. Invalid creates/updates return an actionable error without changing the stored note.`
+ 
+ /** Notify local projections only after a validated mutation; deletion passes no note. */
+-export function createNoteTool(onChange?: (id: string, note: Readonly<NoteItem> | undefined) => void): Tool {
++export function createNoteTool(
++  onChange?: (id: string, note: Readonly<NoteItem> | undefined) => void,
++  validate?: (note: Readonly<NoteItem>) => string | undefined,
++): Tool {
+   const notes = new Map<string, NoteItem>()
+ 
+   const toWire = (id: string, note: NoteItem, includeContent: boolean): NoteWire => ({
+@@ -57,7 +62,7 @@
+ 
+   const notFound = (id: string) => JSON.stringify({ success: false, error: `Note with ID '${id}' not found` })
+ 
+-  const create = (record: Record<string, unknown>, callID?: string) => {
++  const create = (record: Record<string, unknown>, callID?: string, restoring = false) => {
+     const title = stringField(record, "title")?.trim()
+     if (!title) return JSON.stringify({ success: false, error: "Title cannot be empty" })
+     const content = stringField(record, "content")?.trim()
+@@ -80,6 +85,8 @@
+       createdAt: timestamp,
+       updatedAt: timestamp,
+     }
++    const error = restoring ? undefined : validate?.(note)
++    if (error) return JSON.stringify({ success: false, error })
+     notes.set(id, note)
+     onChange?.(id, note)
+     return JSON.stringify({
+@@ -125,7 +132,7 @@
+     })
+   }
+ 
+-  const update = (record: Record<string, unknown>) => {
++  const update = (record: Record<string, unknown>, restoring = false) => {
+     const id = stringField(record, "note_id")?.trim() ?? ""
+     const note = notes.get(id)
+     if (!note) return notFound(id)
+@@ -137,12 +144,18 @@
+     if (content !== undefined && !content.trim()) {
+       return JSON.stringify({ success: false, error: "Content cannot be empty" })
+     }
+-    if (title !== undefined) note.title = title.trim()
+-    if (content !== undefined) note.content = content.trim()
+     const tags = arrayField(record, "tags")
+-    if (tags !== undefined) note.tags = tags.filter((tag): tag is string => typeof tag === "string")
+-    note.updatedAt = new Date().toISOString()
+-    onChange?.(id, note)
++    const updated: NoteItem = {
++      ...note,
++      ...(title !== undefined ? { title: title.trim() } : {}),
++      ...(content !== undefined ? { content: content.trim() } : {}),
++      ...(tags !== undefined ? { tags: tags.filter((tag): tag is string => typeof tag === "string") } : {}),
++      updatedAt: new Date().toISOString(),
++    }
++    const error = restoring ? undefined : validate?.(updated)
++    if (error) return JSON.stringify({ success: false, error })
++    notes.set(id, updated)
++    onChange?.(id, updated)
+     return JSON.stringify({
+       success: true,
+       note_id: id,
+@@ -194,13 +207,13 @@
+       const action = stringField(record, "action")?.trim().toLowerCase()
+       switch (action) {
+         case "create":
+-          return create(record, ctx.callID)
++          return create(record, ctx.callID, ctx.replay !== undefined)
+         case "list":
+           return list(record)
+         case "get":
+           return get(record)
+         case "update":
+-          return update(record)
++          return update(record, ctx.replay !== undefined)
+         case "delete":
+           return remove(record)
+         default:
+--- a/packages/wycode/src/tool.ts
++++ b/packages/wycode/src/tool.ts
+@@ -21,6 +21,6 @@
+   callID?: string
+   signal?: AbortSignal
+   /** Canonical target from a durable successful result; replay must not rediscover the host. */
+-  replay?: { canonicalTarget: string }
++  replay?: { canonicalTarget?: string }
+   catalog?: readonly ToolCatalogEntry[]
+ }
+--- a/packages/wycode/src/session-scan.ts
++++ b/packages/wycode/src/session-scan.ts
+@@ -9,7 +9,7 @@
+ import type { AgentCompletion } from "./agents/coordinator"
+ import { asRecord } from "./tools/args"
+ import type { GoalSeed, GoalSnapshot } from "./tools/goal"
+-import type { ScanPlanStore } from "./tools/scan-plan"
++
+ 
+ export type SessionScanReplayEntry = {
+   name: string
+@@ -38,11 +38,11 @@
+   findings(): Finding[]
+   goal(): GoalSnapshot | undefined
+   setGoal(goal?: GoalSeed): void
+-  progress(): { goal?: GoalSnapshot; next: ReturnType<ScanPlanStore["next"]> }
++  progress(): ReturnType<ReturnType<typeof createScanToolSet>["progress"]>
+   report(
+     status: ReportStatus,
+     error?: string,
+-  ): Promise<{ dir: string; markdown: string; status?: ReportStatus; error?: string }>
++  ): Promise<{ dir: string; markdown: string; findings: Finding[]; status?: ReportStatus; error?: string }>
+ }
+ 
+ // Schemas are derived from the same factories as executors. Construction only
+@@ -74,7 +74,9 @@
+       continue
+     }
+     if (!REPLAY_TOOLS.has(entry.name)) continue
+-    const replay = entry.name === "threat_model" ? threatModelReplay(entry) : undefined
++    // Rejected writes must stay rejected when restoring older note formats.
++    if (entry.name === "note" && entry.output && asRecord(JSON.parse(entry.output)).success === false) continue
++    const replay = entry.name === "threat_model" ? threatModelReplay(entry) : {}
+     if (entry.name === "threat_model" && !replay) continue
+     const tool = base.tools.find((tool) => tool.name === entry.name)!
+     // finish_scan validates before capturing; malformed finish attempts cannot
+@@ -97,7 +99,7 @@
+       })
+       if (base.summary)
+         await Bun.write(path.join(report.dir, "summary.md"), renderSummary(base.summary, report.status ?? status))
+-      return { dir: report.dir, markdown: report.markdown, status: report.status, error: report.error }
++      return { dir: report.dir, markdown: report.markdown, findings: base.findings(), status: report.status, error: report.error }
+     },
+   }
+ }
+--- a/packages/wycode/src/session-scan.test.ts
++++ b/packages/wycode/src/session-scan.test.ts
+@@ -57,7 +57,7 @@
+   action: "create",
+   category: "findings",
+   title: "Object authorization",
+-  content: "Severity: high\n\n## Description\nOther users' records are accessible.",
++  content: "Severity: high\n\n## Description\nOther users' records are accessible.\n\n## Evidence\nFixture response contains another account record.",
+ }
+ const summary = {
+   executive_summary: "One confirmed issue.",
+@@ -274,7 +274,7 @@
+     await item.call("note", {
+       action: "update",
+       note_id: created.note_id,
+-      content: "Severity: medium\n\n## Description\nLimited exposure.",
++      content: "Severity: medium\n\n## Description\nLimited exposure.\n\n## Evidence\nReduced fixture response.",
+     })
+     expect(item.scan.findings()).toMatchObject([
+       { title: "Object authorization", severity: "medium", description: "Limited exposure." },
+@@ -392,3 +392,15 @@
+     expect(await item.scan.systemPrompt("subagent")).toContain("agent_finish")
+   })
+ })
++
++
++test("restores legacy findings without host effects but validates new writes", async () => {
++  const item = await fixture([
++    { name: "note", input: { action: "create", category: "findings", title: "Legacy", content: "Historical observation" }, callID: "legacy" },
++    { name: "note", input: { action: "create", category: "findings", title: "Rejected", content: "Invalid new finding" }, callID: "rejected", output: JSON.stringify({ success: false, error: "Missing evidence" }) },
++  ])
++  expect(item.scan.findings()).toHaveLength(1)
++  expect(item.scan.findings()).toMatchObject([{ title: "Legacy", severity: "info" }])
++  expect(await item.call("note", { action: "create", category: "findings", title: "New", content: "Historical observation" })).toMatchObject({ success: false, error: expect.stringContaining("Severity") })
++  expect(item.calls).toEqual({ exec: [], read: [], written: [] })
++})
+--- a/packages/wycode/src/scan.ts
++++ b/packages/wycode/src/scan.ts
+@@ -224,7 +224,14 @@
+   // The graph's context binds late: the roster and plan (dry-run) assemble
+   // before the execution exists; only a spawned child would resolve the thunk.
+   const bound: { context?: ToolContext } = {}
+-  const handleEvent = progress(out, deps.onEvent)
++  const handleEvent = progress(out, (event) => {
++    deps.onEvent?.(event)
++    if (event.type !== "tool-result" || event.name !== "scan_plan") return
++    const summary = base.progress().summary
++    out(`Tasks: ${summary.completed} completed · ${summary.running} running · ${summary.pending} pending · ${summary.blocked} blocked · ${summary.cancelled} cancelled`)
++    for (const task of summary.tasks.filter((task) => task.status === "running" || task.status === "blocked"))
++      out(`  ${task.status}: ${task.title}${task.reason ? ` — ${task.reason}` : ""}`)
++  })
+   const graph = createAgentGraph({
+     model: options.model ?? DEFAULT_MODEL,
+     ...(options.effort !== undefined ? { effort: options.effort } : {}),
+--- a/packages/wycode/src/scan.test.ts
++++ b/packages/wycode/src/scan.test.ts
+@@ -578,3 +578,30 @@
+     }
+   })
+ })
++
++
++test("headless progress explains blockers and retry reasons and preserves stopped status", async () => {
++  const { lines, out } = capture()
++  const baseDir = await mkdtemp(path.join(tmpdir(), "wycode-progress-"))
++  try {
++    const outcome = await runScan({ target: "local-fixture", out }, {
++      createExecution: async () => fakeExecution().execution,
++      reportBaseDir: baseDir,
++      run: async (options) => {
++        const tool = options.tools.find((tool) => tool.name === "scan_plan")!
++        const result = await tool.execute({ action: "create", tasks: [
++          { task_id: "fixture", title: "Review fixture", target: "fixture", hypothesis: "Needs account", validation: "Check fixture", status: "blocked", result: "Missing fixture account" },
++        ] }, options.context)
++        options.onEvent({ type: "tool-result", id: "plan", name: "scan_plan", result })
++        options.onEvent({ type: "retry", attempt: 1, delayMs: 2000, error: "Fixture rate limit" })
++        return { status: "stopped", turns: 1 }
++      },
++    })
++    expect(lines.join("\n")).toContain("0 completed · 0 running · 0 pending · 1 blocked")
++    expect(lines.join("\n")).toContain("blocked: Review fixture — Missing fixture account")
++    expect(lines.join("\n")).toContain("retry 1 in 2000ms: Fixture rate limit")
++    expect(outcome).toMatchObject({ status: "stopped", exitCode: 1 })
++  } finally {
++    await rm(baseDir, { recursive: true, force: true })
++  }
++})
+--- a/packages/wycode/prompts/system-prompt.md
++++ b/packages/wycode/prompts/system-prompt.md
+@@ -155,7 +155,7 @@
+   Actionable fix.
+   ```
+ 
+-  Omit the CVSS line only when no defensible vector exists. finish_scan summarizes from what you recorded; a finding you never wrote down is a finding the report loses.
++  Omit the CVSS line only when no defensible vector exists. Finding creates and updates reject missing/invalid Severity headers and empty Evidence sections without changing the stored note. Correct the reported field before retrying; keep unverified candidates in category questions. finish_scan summarizes from what you recorded; a finding you never wrote down is a finding the report loses.
+ 
+ STATE & COORDINATION TOOLS (when and how):
+ Plans, findings, chains, coverage and notes survive native reconstruction through durable tool bookkeeping and feed the final report. Shell commands, network requests and transient thoughts do not become report state automatically.
+--- a/packages/core/src/plugin/wycode-session.ts
++++ b/packages/core/src/plugin/wycode-session.ts
+@@ -5,6 +5,8 @@
+ import type { SessionHooks } from "@opencode/plugin/effect/session"
+ import { Tool } from "@opencode/schema/tool"
+ import { DateTime, Deferred, Effect, JsonSchema, Option, Result, Schema, Scope, Semaphore, Stream } from "effect"
++import path from "node:path"
++import { stat } from "node:fs/promises"
+ import {
+   createBashExecution,
+   createSessionScanTools,
+@@ -314,6 +316,7 @@
+           source: "wycode.assessment",
+           status: report.success.status ?? status,
+           reportDir: report.success.dir,
++          findings: report.success.findings,
+         },
+       })
+       .pipe(Effect.orDie)
+@@ -369,6 +372,21 @@
+       })
+     })
+   }
++  yield* ctx.command.transform((editor) =>
++    editor.add({
++      name: "chat",
++      description: "ask a question without starting an assessment",
++      execute: (input) => Effect.gen(function* () {
++        if (!input.prompt.text.trim()) return yield* Effect.fail(new Error("Usage: /chat <question>"))
++        yield* sessions.prompt({
++          ...input.prompt,
++          sessionID: input.sessionID,
++          delivery: input.delivery,
++          metadata: { "wycode.chat": true },
++        })
++      }),
++    }),
++  )
+   yield* ctx.command.transform((editor) =>
+     editor.add({
+       name: "start",
+@@ -446,8 +464,11 @@
+         return
+       }
+       if ((yield* get(event.sessionID)).agent !== "hacking") return
++      if (event.metadata?.["wycode.chat"] === true) return
+       const target = bareTarget(event.prompt.text)
+-      if (target) event.metadata = { ...event.metadata, [requestKey]: { target, sessionID: event.sessionID } }
++      if (!target) return
++      if (!/^https?:\/\//i.test(target) && (yield* Effect.promise(() => stat(path.resolve(ctx.location.directory, target.replace(/:\d+(?::\d+)?$/, ""))).then(() => true, () => false)))) return
++      event.metadata = { ...event.metadata, [requestKey]: { target, sessionID: event.sessionID } }
+     }),
+   )
+   const prepare = Effect.fn("WycodeSession.prepare")(function* (event: SessionHooks["context"], admit: boolean) {
+@@ -592,7 +613,13 @@
+                     signal,
+                     catalog: context.catalog,
+                   })
+-                  return { content, order }
++                  return {
++                    content,
++                    order,
++                    ...(definition.name === "scan_plan"
++                      ? { progress: { scanID: current.scanID, ...loaded.tools.progress().summary } }
++                      : {}),
++                  }
+                 },
+                 catch: toolError,
+               })
+@@ -601,7 +628,9 @@
+                 : execute
+               return {
+                 content: result.content,
+-                ...(result.order !== undefined ? { metadata: { "wycode.bookkeeping": result.order } } : {}),
++                ...(result.order !== undefined
++                  ? { metadata: { "wycode.bookkeeping": result.order, ...(result.progress ? { "wycode.progress": result.progress } : {}) } }
++                  : {}),
+                 ...(definition.name === "shell"
+                   ? {
+                       output: shell
+@@ -899,6 +928,8 @@
+ function bareTarget(text: string) {
+   const value = text.trim()
+   if (/\s/.test(value)) return
++  // A filename can also be a domain. Explicit /start and URLs remain unambiguous.
++  if (!/^https?:\/\//i.test(value) && /\.(?:md|txt|json|jsonc|[cm]?js|jsx|tsx?|py|rs|go|ya?ml|toml|lock|sql|sh)(?::\d+(?::\d+)?)?$/i.test(value)) return
+   if (
+     /^https?:\/\//i.test(value) ||
+     /^(?:[a-z0-9-]+\.)+[a-z0-9-]+(?::\d+)?(?:\/\S*)?$/i.test(value) ||
+--- a/packages/core/test/plugin/wycode.test.ts
++++ b/packages/core/test/plugin/wycode.test.ts
+@@ -487,7 +487,7 @@
+       action: "create",
+       category: "findings",
+       title: "Retained evidence",
+-      content: "Severity: high\n\n## Description\nConfirmed before report failure.",
++      content: "Severity: high\n\n## Description\nConfirmed before report failure.\n\n## Evidence\nRecorded fixture witness.",
+     })
+     yield* note.persist()
+     const finish = yield* fixture.execute("finish_scan", finishInput)
+@@ -535,6 +535,18 @@
+       prompt: { text: "Explain SQL injection" },
+     })
+     expect(chat.metadata?.["wycode.scan.request"]).toBeUndefined()
++    const location = yield* Location.Service
++    yield* Effect.promise(() => Bun.write(path.join(location.directory, "fixture.test"), "local fixture"))
++    for (const text of ["README.md", "README.md:12", "package.json", "script.ts:42:8", "fixture.test", "fixture.test:7", "./example.com"]) {
++      const result = yield* hooks.trigger("session", "prompt", { ...input, metadata: undefined, prompt: { text } })
++      expect(result.metadata?.["wycode.scan.request"]).toBeUndefined()
++    }
++    for (const text of ["example.test", "example.test:443", "localhost", "https://readme.md"]) {
++      const result = yield* hooks.trigger("session", "prompt", { ...input, metadata: undefined, prompt: { text } })
++      expect(result.metadata?.["wycode.scan.request"]).toMatchObject({ target: text })
++    }
++    const explicitChat = yield* hooks.trigger("session", "prompt", { ...input, metadata: { "wycode.chat": true }, prompt: { text: "example.test" } })
++    expect(explicitChat.metadata?.["wycode.scan.request"]).toBeUndefined()
+   }),
+ )
+ 
+@@ -890,7 +902,7 @@
+             action: "create",
+             category: "findings",
+             title: "Recovered finding",
+-            content: "Severity: high\n\n## Description\nConfirmed before restart.",
++            content: "Severity: high\n\n## Description\nConfirmed before restart.\n\n## Evidence\nRecorded fixture witness.",
+           },
+           "durable-note",
+         )
+@@ -1544,3 +1556,19 @@
+     }),
+   )
+ }
++
++
++it.effect("publishes shared task progress in native bookkeeping results", () =>
++  Effect.gen(function* () {
++    const fixture = yield* scanFixture()
++    yield* fixture.deliver()
++    yield* fixture.hooks.trigger("session", "context", fixture.context())
++    const plan = yield* fixture.execute("scan_plan", { action: "create", tasks: [
++      { task_id: "blocked", title: "Fixture validation", target: "fixture", hypothesis: "Unverified", validation: "Need account", status: "blocked", result: "Missing fixture account" },
++    ] })
++    expect(plan.result.metadata?.["wycode.progress"]).toMatchObject({ blocked: 1, pending: 0, tasks: [{ title: "Fixture validation", reason: "Missing fixture account" }] })
++    yield* plan.persist()
++    const restored = yield* fixture.execute("scan_plan", { action: "list" }, "read-plan")
++    expect(restored.result.metadata?.["wycode.progress"]).toMatchObject({ blocked: 1 })
++  }),
++)
+--- a/packages/tui/src/routes/home.tsx
++++ b/packages/tui/src/routes/home.tsx
+@@ -28,6 +28,7 @@
+   const promptRef = usePromptRef()
+   const [ref, setRef] = createSignal<PromptRef | undefined>()
+   const args = useArgs()
++  const theme = useTheme()
+   const local = useLocal()
+   const editor = useEditorContext()
+   const data = useData()
+@@ -79,6 +80,16 @@
+     r.submit()
+   })
+ 
++  const choose = (mode: "chat" | "project" | "target") => {
++    const composer = ref()
++    if (!composer) return
++    const text = composer.current.text.replace(/^\/(?:chat|start|goal)\s*/, "").trim()
++    composer.set({ ...composer.current, text: mode === "project"
++      ? text ? `/goal ${text}` : "/start ."
++      : `${mode === "chat" ? "/chat" : "/start"} ${text}` })
++    composer.focus()
++  }
++
+   return (
+     <>
+       <box
+@@ -102,7 +113,15 @@
+         <box height={1} flexShrink={0} />
+         <UpdateNotification width={logoWidth()} />
+         <box width="100%" maxWidth={75} zIndex={1000} paddingTop={1} flexShrink={0} position="relative">
+-          <Prompt ref={bind} placeholders={placeholder} disabled={forms().length > 0} />
++          <Show when={args.profile === "wycode"}>
++            <box flexDirection="column" paddingLeft={1} paddingBottom={1}>
++              <text fg={theme.text.muted}>Choose a starting point; review the prompt before sending.</text>
++              <text fg={theme.text.action.secondary.base} onMouseUp={() => choose("chat")}>Chat — /chat &lt;question&gt;</text>
++              <text fg={theme.text.action.secondary.base} onMouseUp={() => choose("project")}>Assess project — /start .</text>
++              <text fg={theme.text.action.secondary.base} onMouseUp={() => choose("target")}>Assess target — /start &lt;target&gt;</text>
++            </box>
++          </Show>
++          <Prompt ref={bind} placeholders={args.profile === "wycode" ? { normal: ["/chat Explain this project", "/start .", "/start https://example.test"], shell: placeholder.shell } : placeholder} disabled={forms().length > 0} />
+         </box>
+         <box flexGrow={1} minHeight={0} />
+       </box>
+--- a/packages/tui/src/routes/session/index.tsx
++++ b/packages/tui/src/routes/session/index.tsx
+@@ -71,6 +71,7 @@
+ import { DialogTimeline } from "./dialog-timeline"
+ import { Composer } from "./composer"
+ import { AssessmentReport } from "./assessment-report"
++import { AssessmentProgress } from "./assessment-progress"
+ import { filetype } from "../../util/filetype"
+ import parsers from "../../parsers-config"
+ import { errorMessage } from "../../util/error"
+@@ -1474,6 +1475,7 @@
+               <Show when={!composer.open && !disabled() && queuedPrompts().length > 0}>
+                 <QueuedPromptDock prompts={queuedPrompts()} onOpen={openQueuedPrompts} />
+               </Show>
++              <AssessmentProgress sessionID={route.sessionID} />
+               <Slot path="session.composer.top" input={{ sessionID: route.sessionID }} />
+               <Composer
+                 sessionID={route.sessionID}
+--- /dev/null
++++ b/packages/tui/src/routes/session/assessment-progress.tsx
+@@ -0,0 +1,81 @@
++import { createEffect, createMemo, For, Show } from "solid-js"
++import { Option } from "effect"
++import { useData } from "../../context/data"
++import { useTheme } from "../../context/theme"
++import { assessmentProgress, assessmentState } from "../../util/assessment"
++
++export function AssessmentProgress(props: { sessionID: string }) {
++  const data = useData()
++  const theme = useTheme()
++  const state = createMemo(() => Option.getOrUndefined(assessmentState(data.session.get(props.sessionID)?.metadata?.["wycode.scan"])))
++  const family = createMemo(() => [props.sessionID, ...data.session.family(props.sessionID).filter((id) => id !== props.sessionID)])
++  // Load only this assessment family; existing message events keep these views current.
++  createEffect(() => {
++    const current = state()
++    if (!current) return
++    for (const id of family()) {
++      if (id === props.sessionID || data.session.get(id)?.metadata?.["wycode.scan"] === undefined) continue
++      void data.session.message.sync(id).catch(() => {})
++    }
++  })
++  const messages = createMemo(() => family().flatMap((id) => {
++    const entries = data.session.message.list(id)
++    if (id !== props.sessionID) return Option.getOrUndefined(assessmentState(data.session.get(id)?.metadata?.["wycode.scan"]))?.scanID === state()?.scanID ? entries : []
++    const boundary = entries.findIndex((message) => message.id === state()?.inputID)
++    return boundary < 0 ? entries : entries.slice(boundary + 1)
++  }))
++  const progress = createMemo(() => messages().flatMap((message) => message.type !== "assistant" ? [] : message.content.flatMap((part) => {
++    if (part.type !== "tool" || part.state.status !== "completed") return []
++    const summary = Option.getOrUndefined(assessmentProgress(part.state.metadata?.["wycode.progress"]))
++    const order = part.state.metadata?.["wycode.bookkeeping"]
++    return summary?.scanID === state()?.scanID && typeof order === "number" ? [{ summary, order }] : []
++  })).sort((a, b) => b.order - a.order)[0]?.summary)
++  const restoring = new Set<string>()
++  const hasSnapshot = (id: string, scanID: string) => data.session.message.list(id).some((message) =>
++    message.type === "assistant" && message.content.some((part) => part.type === "tool" && part.state.status === "completed" &&
++      Option.getOrUndefined(assessmentProgress(part.state.metadata?.["wycode.progress"]))?.scanID === scanID))
++  createEffect(() => {
++    const current = state()
++    if (!current) return
++    for (const id of family()) {
++      const entries = data.session.message.list(id)
++      if (hasSnapshot(id, current.scanID) || !data.session.message.more(id) ||
++        (id === props.sessionID && entries.some((message) => message.id === current.inputID)) || restoring.has(id)) continue
++      restoring.add(id)
++      void (async () => {
++        while (state()?.scanID === current.scanID && !hasSnapshot(id, current.scanID) && data.session.message.more(id)) {
++          if (id === props.sessionID && data.session.message.list(id).some((message) => message.id === current.inputID)) break
++          await data.session.message.loadMore(id)
++        }
++      })().catch(() => {}).finally(() => restoring.delete(id))
++    }
++  })
++  const retry = createMemo(() => {
++    if (state()?.status !== "running") return
++    return family().flatMap((id) => {
++      const latest = messages().filter((message) => data.session.message.get(id, message.id) !== undefined && message.type === "assistant").at(-1)
++      return latest?.type === "assistant" && latest.retry ? [latest.retry] : []
++    }).sort((a, b) => b.at - a.at)[0]
++  })
++  return (
++    <Show when={state()}>{(current) => (
++      <box flexDirection="column" flexShrink={0} paddingLeft={1} paddingRight={1}>
++        <text fg={theme.text.base} wrapMode="word">Assessment {current().status} · {current().target}</text>
++        <Show when={progress()} fallback={<text fg={theme.text.muted}>Waiting for a recorded scan plan</text>}>{(summary) => (
++          <>
++            <text fg={theme.text.muted} wrapMode="word">
++              {current().status !== "running" ? "Last recorded: " : ""}{summary().completed} completed · {summary().running} running · {summary().pending} pending · {summary().blocked} blocked · {summary().cancelled} cancelled
++            </text>
++            <For each={summary().tasks.filter((task) => task.status === "running" || task.status === "blocked").slice(0, 2)}>{(task) => (
++              <text fg={task.status === "blocked" ? theme.text.feedback.warning.base : theme.text.muted} wrapMode="word">
++                {task.status}: {task.title}{task.reason ? ` — ${task.reason}` : ""}
++              </text>
++            )}</For>
++          </>
++        )}</Show>
++        <Show when={retry()}>{(value) => <text fg={theme.text.feedback.warning.base} wrapMode="word">Retry attempt {value().attempt}: {value().error.message}</text>}</Show>
++        <Show when={current().error}>{(error) => <text fg={theme.text.feedback.warning.base} wrapMode="word">{error()}</text>}</Show>
++      </box>
++    )}</Show>
++  )
++}
+--- a/packages/tui/src/routes/session/assessment-report.tsx
++++ b/packages/tui/src/routes/session/assessment-report.tsx
+@@ -1,26 +1,82 @@
+ import type { SessionMessageInfo } from "@opencode/client"
++import { createMemo, Show } from "solid-js"
++import { createStore } from "solid-js/store"
++import { Option } from "effect"
+ import { useTheme, useThemes } from "../../context/theme"
+ import { usePlugin } from "../../plugin/context"
+ import { InlineToolRow } from "./message-parts"
+ import { use } from "./render-context"
++import { useDialog } from "../../ui/dialog"
++import { DialogSelect } from "../../ui/dialog-select"
++import { Keymap } from "../../context/keymap"
++import { useData } from "../../context/data"
++import { assessmentFindings } from "../../util/assessment"
++
++const severities = ["all", "critical", "high", "medium", "low", "info"] as const
+ 
+ export function AssessmentReport(props: { message: Extract<SessionMessageInfo, { type: "synthetic" }> }) {
+   const ctx = use()
+   const theme = useTheme()
+   const { currentSyntax: syntax } = useThemes()
+   const plugins = usePlugin()
++  const dialog = useDialog()
++  const data = useData()
++  const findings = createMemo(() => Option.getOrUndefined(assessmentFindings(props.message.metadata?.findings)) ?? [])
++  const [view, setView] = createStore({ severity: "all", finding: undefined as string | undefined, filtered: false })
++  const visible = createMemo(() => findings().filter((finding) => view.finding ? finding.id === view.finding : view.severity === "all" || finding.severity === view.severity))
++  const filter = () => dialog.replace(() => <DialogSelect
++    title="Filter assessment findings"
++    current={view.severity}
++    options={severities.map((severity) => ({ value: severity, title: severity, description: `${findings().filter((finding) => severity === "all" || finding.severity === severity).length} findings` }))}
++    onSelect={(option) => { setView({ severity: option.value, finding: undefined, filtered: true }); dialog.clear() }}
++  />)
++  const evidence = () => dialog.replace(() => <DialogSelect
++    title="Open finding evidence"
++    options={findings().map((finding) => ({ value: finding.id, title: finding.title, description: `${finding.severity} · ${finding.target}` }))}
++    onSelect={(option) => { setView({ finding: option.value, filtered: true }); dialog.clear() }}
++  />)
++  const full = () => setView({ severity: "all", finding: undefined, filtered: false })
++  Keymap.createLayer(() => ({
++    mode: "global",
++    enabled: () => findings().length > 0 && data.session.message.list(ctx.sessionID).findLast((message) => message.type === "synthetic" && message.metadata?.source === "wycode.assessment" && message.metadata?.findings)?.id === props.message.id,
++    commands: [
++      { id: "assessment.report.filter", title: "Filter assessment findings", group: "Session", palette: true, slash: { name: "findings" }, run: filter },
++      { id: "assessment.report.evidence", title: "Open finding evidence", group: "Session", palette: true, slash: { name: "evidence" }, run: evidence },
++      { id: "assessment.report.full", title: "Show full assessment report", group: "Session", palette: true, slash: { name: "report" }, run: full },
++    ],
++  }))
++  const content = createMemo(() => !view.filtered ? props.message.text : [
++    `# Assessment findings — ${view.finding ? "selected evidence" : view.severity}`,
++    "",
++    ...visible().flatMap((finding) => [
++      `## ${finding.title}`,
++      `Severity: ${finding.severity} · Target: ${finding.target}`,
++      "", finding.description, "",
++      "### Evidence", finding.evidence, "",
++      "### Reproduction", ...finding.reproduction.map((step, index) => `${index + 1}. ${step}`), "",
++      "### Remediation", finding.remediation, "",
++    ]),
++    ...(visible().length ? [] : ["No findings match this filter."]),
++  ].join("\n"))
+   return (
+     <box flexDirection="column" flexShrink={0}>
+       <InlineToolRow icon="◈" color={theme.text.muted} pending="Report" complete={true}>
+         {props.message.description}
+       </InlineToolRow>
++      <Show when={findings().length}>
++        <box paddingLeft={3} flexDirection="row" flexWrap="wrap" gap={2}>
++          <text fg={theme.text.action.secondary.base} onMouseUp={filter}>Filter: {view.severity} /findings</text>
++          <text fg={theme.text.action.secondary.base} onMouseUp={evidence}>Evidence /evidence</text>
++          <text fg={theme.text.action.secondary.base} onMouseUp={full}>Full report /report</text>
++        </box>
++      </Show>
+       <box paddingLeft={3} paddingTop={1} paddingBottom={1}>
+         <markdown
+           syntaxStyle={syntax()}
+           renderNode={plugins.markdown()}
+           streaming={false}
+           internalBlockMode="top-level"
+-          content={props.message.text}
++          content={content()}
+           tableOptions={{ style: "grid", cellPaddingX: 1 }}
+           conceal={ctx.markdownMode() === "rendered"}
+           fg={theme.markdown.text}
+--- /dev/null
++++ b/packages/tui/src/util/assessment.ts
+@@ -0,0 +1,35 @@
++import { Schema } from "effect"
++
++export const assessmentState = Schema.decodeUnknownOption(Schema.Struct({
++  scanID: Schema.String,
++  inputID: Schema.String,
++  target: Schema.String,
++  status: Schema.Literals(["running", "completed", "failed", "stopped"]),
++  error: Schema.optionalKey(Schema.String),
++}))
++
++export const assessmentProgress = Schema.decodeUnknownOption(Schema.Struct({
++  scanID: Schema.String,
++  completed: Schema.Number,
++  running: Schema.Number,
++  pending: Schema.Number,
++  blocked: Schema.Number,
++  cancelled: Schema.Number,
++  tasks: Schema.Array(Schema.Struct({
++    id: Schema.String,
++    title: Schema.String,
++    status: Schema.Literals(["completed", "running", "pending", "blocked", "cancelled"]),
++    reason: Schema.optionalKey(Schema.String),
++  })),
++}))
++
++export const assessmentFindings = Schema.decodeUnknownOption(Schema.Array(Schema.Struct({
++  id: Schema.String,
++  title: Schema.String,
++  severity: Schema.Literals(["critical", "high", "medium", "low", "info"]),
++  target: Schema.String,
++  description: Schema.String,
++  reproduction: Schema.Array(Schema.String),
++  evidence: Schema.String,
++  remediation: Schema.String,
++})))
+--- /dev/null
++++ b/packages/tui/test/assessment-progress.test.tsx
+@@ -0,0 +1,38 @@
++import { expect, test } from "bun:test"
++import { createAppFixture } from "./fixture/app"
++import { directory, json } from "./fixture/tui-client"
++
++test.each([44, 100])("assessment progress shows task counts, blocking and retry reasons at %i columns", async (width) => {
++  const session = {
++    id: "ses_progress", title: "Progress fixture", projectID: "proj_test", location: { directory },
++    cost: 0, tokens: { input: 0, output: 0, reasoning: 0, cache: { read: 0, write: 0 } }, time: { created: 0, updated: 0 },
++    metadata: { "wycode.scan": { scanID: "scan-fixture", inputID: "msg_prompt", target: "local fixture", status: "running" } },
++  }
++  let restored = false
++  await using setup = await createAppFixture({ width, height: 40, config: { animations: false, tabs: { enabled: false } }, args: { sessionID: session.id }, fetch: (url) => {
++    if (url.pathname === "/api/session") return json({ data: [session], cursor: {} })
++    if (url.pathname === `/api/session/${session.id}`) return json({ data: session })
++    if (url.pathname.endsWith("/message") && width === 100 && !url.searchParams.has("cursor")) return json({ data: Array.from({ length: 20 }, (_, index) => ({
++      type: "assistant", id: `msg_recent_${index}`, agent: "hacking", model: { providerID: "fixture", id: "fixture" }, time: { created: index + 3 }, content: [{ type: "text", text: `Recent fixture ${index}` }],
++    })).reverse(), cursor: { next: "older" } })
++    if (url.pathname.endsWith("/message")) { restored = url.searchParams.get("cursor") === "older"; return json({ data: [
++      { type: "user", id: "msg_prompt", text: "Assess fixture", time: { created: 0 } },
++      { type: "assistant", id: "msg_progress", agent: "hacking", model: { providerID: "fixture", id: "fixture" }, time: { created: 1 }, content: [{
++        type: "tool", id: "call_plan", name: "scan_plan", time: { created: 1, ran: 1, completed: 2 }, executed: true,
++        state: { status: "completed", input: { action: "list" }, content: [{ type: "text", text: "Recorded tasks" }], metadata: {
++          "wycode.bookkeeping": 0,
++          "wycode.progress": { scanID: "scan-fixture", completed: 2, running: 1, pending: 3, blocked: 1, cancelled: 0, tasks: [{ id: "check", title: "Validate fixture", status: "blocked", reason: "Missing account" }] },
++        } },
++      }] },
++    ].reverse(), cursor: {} }) }
++    if (url.pathname.endsWith("/inbox")) return json({ data: [] })
++  } })
++  const frame = (await setup.waitForFrame((frame) => frame.replace(/\s+/g, " ").includes("Missing account"))).replace(/\s+/g, " ")
++  if (width === 100) expect(restored).toBe(true)
++  expect(frame).toContain("2 completed")
++  expect(frame).toContain("1 running")
++  expect(frame).toContain("3 pending")
++  expect(frame).toContain("1 blocked")
++  setup.events.emit({ id: "evt_retry", created: 3, type: "session.retry.scheduled", durable: { aggregateID: session.id, seq: 1, version: 1 }, data: { sessionID: session.id, assistantMessageID: width === 100 ? "msg_recent_19" : "msg_progress", attempt: 1, at: 3000000000000, error: { type: "fixture", message: "Rate limited" } } })
++  expect(await setup.waitForFrame((frame) => frame.includes("Rate limited"))).toContain("Retry attempt 1")
++})
+--- a/packages/tui/test/assessment-report.test.tsx
++++ b/packages/tui/test/assessment-report.test.tsx
+@@ -1,4 +1,5 @@
+ import { expect, test } from "bun:test"
++import { InputRenderable, TextareaRenderable } from "@opentui/core"
+ import { createAppFixture } from "./fixture/app"
+ import { directory, json } from "./fixture/tui-client"
+ 
+@@ -47,3 +48,44 @@
+   expect(frame).toContain("Retest the authorization fix")
+   expect(frame).toContain("unverified candidate")
+ })
++
++
++test("filters findings by severity and opens evidence without changing the full report", async () => {
++  const session = { id: "ses_filter", title: "Report fixture", projectID: "proj_test", location: { directory }, cost: 0, tokens: { input: 0, output: 0, reasoning: 0, cache: { read: 0, write: 0 } }, time: { created: 0, updated: 0 } }
++  const findings = [
++    { id: "finding-high", title: "High fixture", severity: "high", target: "fixture", description: "First description", evidence: "High witness", reproduction: ["Read fixture"], remediation: "Enforce boundary" },
++    { id: "finding-low", title: "Low fixture", severity: "low", target: "fixture", description: "Second description", evidence: "Low witness", reproduction: ["Read fixture"], remediation: "Adjust setting" },
++  ]
++  await using setup = await createAppFixture({ height: 55, config: { animations: false, tabs: { enabled: false } }, args: { sessionID: session.id }, fetch: (url) => {
++    if (url.pathname === "/api/session") return json({ data: [session], cursor: {} })
++    if (url.pathname === `/api/session/${session.id}`) return json({ data: session })
++    if (url.pathname.endsWith("/message")) return json({ data: [{ type: "synthetic", id: "msg_filter", description: "Assessment completed", text: "# Original full report\nAll original coverage remains here.", metadata: { source: "wycode.assessment", status: "completed", findings }, time: { created: 1 } }], cursor: {} })
++    if (url.pathname.endsWith("/inbox")) return json({ data: [] })
++  } })
++  await setup.waitForFrame((frame) => frame.includes("Original full report"))
++  setup.mockInput.pressKey("u", { ctrl: true })
++  await setup.mockInput.typeText("/findings")
++  setup.mockInput.pressEnter()
++  await setup.waitForFrame((frame) => frame.includes("Filter assessment findings"))
++  await setup.waitFor(() => setup.renderer.currentFocusedEditor instanceof InputRenderable)
++  await setup.mockInput.typeText("high")
++  await setup.waitForFrame((frame) => frame.includes("Filter assessment findings") && !frame.includes("critical"))
++  setup.mockInput.pressEnter()
++  const filtered = await setup.waitForFrame((frame) => frame.includes("High witness"))
++  expect(filtered).not.toContain("Low witness")
++  await setup.waitFor(() => setup.renderer.currentFocusedEditor instanceof TextareaRenderable)
++  setup.mockInput.pressKey("u", { ctrl: true })
++  await setup.mockInput.typeText("/evidence")
++  setup.mockInput.pressEnter()
++  await setup.waitForFrame((frame) => frame.includes("Open finding evidence"))
++  await setup.waitFor(() => setup.renderer.currentFocusedEditor instanceof InputRenderable)
++  await setup.mockInput.typeText("Low fixture")
++  await setup.waitForVisualIdle()
++  setup.mockInput.pressEnter()
++  expect(await setup.waitForFrame((frame) => frame.includes("Low witness"))).not.toContain("High witness")
++  await setup.waitFor(() => setup.renderer.currentFocusedEditor instanceof TextareaRenderable)
++  setup.mockInput.pressKey("u", { ctrl: true })
++  await setup.mockInput.typeText("/report")
++  setup.mockInput.pressEnter()
++  expect(await setup.waitForFrame((frame) => frame.includes("Original full report"))).toContain("original coverage")
++})
+--- a/packages/tui/test/feature-plugins/assessment-input.test.tsx
++++ b/packages/tui/test/feature-plugins/assessment-input.test.tsx
+@@ -5,8 +5,7 @@
+ import { agent, model, session } from "../fixture/local"
+ import { directory, json } from "../fixture/tui-client"
+ 
+-function catalog() {
+-  const location = { directory }
++function catalog(resolveLocation = false) {
+   const creates: unknown[] = []
+   const prompts: unknown[] = []
+   const commands: unknown[] = []
+@@ -17,6 +16,8 @@
+     commands,
+     sessions,
+     async fetch(url: URL, request: Request) {
++      const location = { directory: resolveLocation ? url.searchParams.get("location[directory]") ?? directory : directory }
++      if (resolveLocation && url.pathname === "/api/location") return json({ ...location, project: { id: "proj_test", directory: location.directory, canonical: location.directory } })
+       if (url.pathname === "/api/agent")
+         return json({ location, data: [agent("build"), { ...agent("hacking"), name: "Hacking" }] })
+       if (url.pathname === "/api/model")
+@@ -46,7 +47,7 @@
+       if (url.pathname === "/api/session" && request.method === "POST") {
+         const body = await request.json()
+         creates.push(body)
+-        const created = { ...session(body.id, body.model, body.agent), title: "Assessment session" }
++        const created = { ...session(body.id, body.model, body.agent), ...(resolveLocation ? { location: body.location } : {}), title: "Assessment session" }
+         sessions.push(created)
+         return json({ data: created })
+       }
+@@ -173,3 +174,50 @@
+   expect(fixture.creates[0]).toMatchObject({ agent: "hacking" })
+   expect(fixture.commands[0]).toMatchObject({ name: "start", text: "https://example.com" })
+ })
++
++
++test.each([44, 100])("WYCODE entry choices are visible and chat remains an explicit command at %i columns", async (width) => {
++  const fixture = catalog()
++  const fetch = async (url: URL, request: Request) => {
++    if (url.pathname === "/api/command") return json({ location: { directory }, data: [
++      { name: "start", description: "Start assessment", template: "Assess $ARGUMENTS" },
++      { name: "chat", description: "Ask without starting an assessment", template: "$ARGUMENTS" },
++    ] })
++    return fixture.fetch(url, request)
++  }
++  await using setup = await createAppFixture({ width, height: 40, args: { profile: "wycode" }, fetch })
++  const frame = await setup.waitForFrame((frame) => frame.includes("Assess project") && frame.includes("Hacking"))
++  expect(frame).toContain("Chat")
++  expect(frame).toContain("Assess target")
++  setup.mockInput.pressKey("u", { ctrl: true })
++  await setup.mockInput.typeText("/chat README.md")
++  setup.mockInput.pressEnter()
++  await setup.waitFor(() => fixture.commands.length === 1)
++  expect(fixture.commands[0]).toMatchObject({ name: "chat", text: "README.md" })
++})
++
++
++test("Assess project follows the current directory after cd", async () => {
++  const fixture = catalog(true)
++  const target = "/tmp/selected-project"
++  await using setup = await createAppFixture({ width: 100, height: 40, args: { profile: "wycode" }, fetch: fixture.fetch })
++  await setup.waitForFrame((frame) => frame.includes("Assess project") && frame.includes("Hacking"))
++  setup.mockInput.pressKey("u", { ctrl: true })
++  await setup.mockInput.typeText(`/cd ${target}`)
++  setup.mockInput.pressEscape()
++  await setup.waitForVisualIdle()
++  setup.mockInput.pressEnter()
++  await setup.waitForFrame((frame) => frame.includes("selected-project"))
++  await setup.waitForVisualIdle()
++  expect(setup.renderer.currentFocusedEditor?.plainText).toBe("")
++  await setup.waitForVisualIdle()
++  const lines = setup.captureCharFrame().split("\n")
++  const row = lines.findIndex((line) => line.includes("Assess project"))
++  expect(row).toBeGreaterThanOrEqual(0)
++  await setup.mockMouse.click(lines[row]!.indexOf("Assess project") + 2, row)
++  await setup.waitFor(() => setup.renderer.currentFocusedEditor?.plainText === "/start .")
++  setup.mockInput.pressEnter()
++  await setup.waitFor(() => fixture.commands.length === 1)
++  expect(fixture.creates[0]).toMatchObject({ location: { directory: target } })
++  expect(fixture.commands[0]).toMatchObject({ name: "start", text: "." })
++})
+--- a/packages/wycode/src/tools/finding-chain.test.ts
++++ b/packages/wycode/src/tools/finding-chain.test.ts
+@@ -86,8 +86,8 @@
+     })
+   expect((await verify(chain.links[1].link_id)).success).toBe(false)
+   expect((await verify(chain.links[0].link_id, { evidence: " " })).success).toBe(false)
+-  await f.change({ action: "update", note_id: "a", content: body("") })
+-  expect((await verify(chain.links[0].link_id)).success).toBe(false)
++  expect((await f.change({ action: "update", note_id: "a", content: body("") })).success).toBe(false)
++  expect(f.base.findings().find((finding) => finding.sources?.some((source) => source.note_id === "a"))?.evidence).toBe("First observation")
+   await f.change({ action: "update", note_id: "a", content: body("New first observation") })
+   expect((await verify(chain.links[0].link_id)).success).toBe(true)
+   expect((await verify(chain.links[1].link_id)).success).toBe(true)

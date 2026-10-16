@@ -1,0 +1,95 @@
+{
+  "format": 1,
+  "base_description": "WYCODE 0.1.6 development checkout immediately before the usability work; file hashes pin the uncommitted integration baseline.",
+  "patch_sha256": "2067ff639a0473c5b7c2676de916dcfb9e5c2571c94a7b4da6955945faece386",
+  "files": {
+    "packages/wycode/src/progress.ts": {
+      "before_sha256": null,
+      "after_sha256": "15bc05916595cba2f6ff7c0c082761278cac7779d66b4e2d41834d6735072ce1"
+    },
+    "packages/wycode/src/progress.test.ts": {
+      "before_sha256": null,
+      "after_sha256": "7de7beb05a4ae1a0ad3fcc4edec8153c91c735e6f32ba42a20e7f25e6e4639d6"
+    },
+    "packages/wycode/src/scan-tools.ts": {
+      "before_sha256": "829232c0a64895e8a853ccacf92f645983e94c82725a757df7db127a250023bc",
+      "after_sha256": "a614dbe8f76aed4d16ab101097d2c6a0ce2b34cc5653d9531688740d787ed800"
+    },
+    "packages/wycode/src/scan-tools.test.ts": {
+      "before_sha256": "ca3c3f915103795cdc66f622500789fd4ef4f112c4f067860ce38c1d0cd64187",
+      "after_sha256": "402271cb0e70d4efe274840b7ad44775bfe7b8b88d26253bd026f2250cedb6c1"
+    },
+    "packages/wycode/src/tools/note.ts": {
+      "before_sha256": "ece36e3875969bc85ce1348ba96c58fbae3f5962694f5c1a0a32cf0c4b897d52",
+      "after_sha256": "1b736b29abe2be880fc8b8c0eb9cc917b31d561fd495310dbb5d3cdf6fde1784"
+    },
+    "packages/wycode/src/tool.ts": {
+      "before_sha256": "81855f8b7b2eba5e7bbe3a5c8ab90ec37f83075d2b2a2b5e1bc325cd0e585cd3",
+      "after_sha256": "667d8ae6ae8192f927d96caa56ca05c31bf6b185e723289d82d34a9f8e682884"
+    },
+    "packages/wycode/src/session-scan.ts": {
+      "before_sha256": "e6adfe62ceb41781d27167f2fe6ae5f50c9e067d4512c1ddd9cd636ed4761184",
+      "after_sha256": "08c584fabecac8184d69ffa9b71dfbd14cbe6a48fec91c20c2e2cfcc2feca3de"
+    },
+    "packages/wycode/src/session-scan.test.ts": {
+      "before_sha256": "aa917a68aaa1bb834fa28d7d2d82993b1b0a20cbcc71d47ab93a043080b7fd97",
+      "after_sha256": "39e847c444d52e0380894c0362ac54424f0bca8ab9273e6d80c785e62169699c"
+    },
+    "packages/wycode/src/scan.ts": {
+      "before_sha256": "efa555e4cf22d414ccb925c4ffe38022817575bb664c4bea2c56b2aa2d465a37",
+      "after_sha256": "fcc5eaf6e9d00e73413feb0d48183684daa086c789b0ee721095bd16abcafe20"
+    },
+    "packages/wycode/src/scan.test.ts": {
+      "before_sha256": "1375c20f7e7e107eebabe4ab6fd60008b18ca871d5cc49ca303621998cd4deca",
+      "after_sha256": "8bb1ed3f83a4a7fa3209b99dc72ac10567e5804f27ccf0def867faca9a06807f"
+    },
+    "packages/wycode/prompts/system-prompt.md": {
+      "before_sha256": "2b7e0ab1521d11445fd4d8cd04c2ef4d96aef9d97aae03b443daf2121694b362",
+      "after_sha256": "9eca53cdf994f29807ff3f09ef303c1409b6f311edcad4143365a8f085ac4b8b"
+    },
+    "packages/core/src/plugin/wycode-session.ts": {
+      "before_sha256": "3bdd12a63a25a545d1bbe4af373159a1e8375f7669b14fd218b92885332168a5",
+      "after_sha256": "3e1368663941197895a9a4479c24afb246e2a7b4eab92d194cf05c00817db9bc"
+    },
+    "packages/core/test/plugin/wycode.test.ts": {
+      "before_sha256": "80016d71febd75b17e0708c456d0ce50f436810c0f983a6f84f99bf069e5aa4f",
+      "after_sha256": "56473c6f991992918cb3663e994f38bb783f8fc015546a221d784920486f8963"
+    },
+    "packages/tui/src/routes/home.tsx": {
+      "before_sha256": "f2e8f39d04cf19f4a2f6d55d1a818722fc65ecddb1ab8fd0e5e28a17ff6e265c",
+      "after_sha256": "aabc89d2ea31cfbe8926f676a7c43ef13f1ad9a149cfaf2d5f499b51841d672c"
+    },
+    "packages/tui/src/routes/session/index.tsx": {
+      "before_sha256": "7549fba405fb275529cf3c360dd260ca15de176a1c705be539d69cf4f00cb2d0",
+      "after_sha256": "4c5e8e7730d7101551929aa4bfcde01b3e6e1615a755520a9be89c0f34c9d947"
+    },
+    "packages/tui/src/routes/session/assessment-progress.tsx": {
+      "before_sha256": null,
+      "after_sha256": "6212a3ea352f26c11a3827be7ecfac4e13272c91b4897c55e808876f3eb56830"
+    },
+    "packages/tui/src/routes/session/assessment-report.tsx": {
+      "before_sha256": "8282231bcc83ebf967d0b11529e113799fef15b7e15c7b165c2bcb033bd4b6b8",
+      "after_sha256": "568a2fb1a4b327cbbbbfe08c4d5f1bc5008499ba88d7fecf3105a3ac89c30d71"
+    },
+    "packages/tui/src/util/assessment.ts": {
+      "before_sha256": null,
+      "after_sha256": "7f1d1ff9545b962ca187c155c01907bb5b4401a09fa450c10af69bc4c7544048"
+    },
+    "packages/tui/test/assessment-progress.test.tsx": {
+      "before_sha256": null,
+      "after_sha256": "5b3fc9909dc6cf02fb189c52b321baf3144b96ba89da71a217ee6a8672083a95"
+    },
+    "packages/tui/test/assessment-report.test.tsx": {
+      "before_sha256": "fea4c7ddf8c0f49c2b137fcd15df68fcc9f458bc832f09091960ce7971188e01",
+      "after_sha256": "dca2efcb4fb81b985cb259baae87a2fdaaedaf16a0d9b0bd0708d06a39800bb4"
+    },
+    "packages/tui/test/feature-plugins/assessment-input.test.tsx": {
+      "before_sha256": "a55be0dff4a8c727058f79df8922deae115608395750206017ee48901a8b9990",
+      "after_sha256": "e1cdf7df6e23c55160d2a9276711f5763d425aa822d0e9dba3570873c8b5b30e"
+    },
+    "packages/wycode/src/tools/finding-chain.test.ts": {
+      "before_sha256": "4ccca9c9c8522f3216fa5c625a138d17a79f6edd5ac6da3b4ea7e24d71f84444",
+      "after_sha256": "923530a9e52369a6c08ca651c7853d734f47df5693c6c0c9302e54e6b4484ec0"
+    }
+  }
+}
