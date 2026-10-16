@@ -1,0 +1,87 @@
+{
+  "version": "0.1.7",
+  "source_changeset_sha256": "2067ff639a0473c5b7c2676de916dcfb9e5c2571c94a7b4da6955945faece386",
+  "platforms_built": 8,
+  "assets": 9,
+  "wycode_tests": {
+    "passed": 341,
+    "skipped": 17,
+    "failed": 0
+  },
+  "native_integration_tests": {
+    "passed": 36,
+    "failed": 0
+  },
+  "tui_suite": {
+    "passed": 1489,
+    "skipped": 4,
+    "failed": 0
+  },
+  "focused_usability_tests": {
+    "passed": 11,
+    "failed": 0
+  },
+  "root_check_tasks": 37,
+  "compiled_native": {
+    "progressRecorded": true,
+    "structuredReport": true,
+    "mode": "supported",
+    "status": "completed",
+    "proof": true,
+    "version": "5.3.20(1)-release",
+    "localePreserved": true,
+    "reportSaved": true,
+    "goal": "achieved",
+    "assistantMessages": 8,
+    "goalStatusReadable": true
+  },
+  "compiled_headless": {
+    "exitCode": 0,
+    "proof": true,
+    "version": "5.3.20(1)-release",
+    "localePreserved": true,
+    "reportSaved": true,
+    "complete": true,
+    "goal": "achieved",
+    "shellUsed": true,
+    "visibleReport": true
+  },
+  "compiled_tui": [
+    {
+      "width": 44,
+      "homeChoicesVisible": true,
+      "labels": {
+        "Choose a starting point": true,
+        "Assess project": true,
+        "Assess target": true,
+        "Chat": true
+      },
+      "bytesRendered": 6930
+    },
+    {
+      "width": 100,
+      "homeChoicesVisible": true,
+      "labels": {
+        "Choose a starting point": true,
+        "Assess project": true,
+        "Assess target": true,
+        "Chat": true
+      },
+      "bytesRendered": 12434
+    }
+  ],
+  "limitations": [
+    "Runtime execution verified on macOS ARM64 only; Linux, macOS x64, and Windows targets were cross-compiled and inspected for architecture and archive integrity.",
+    "Native Windows/WSL, platform elevation, and all package-manager distributions were not exercised.",
+    "Binaries are not signed or notarized."
+  ],
+  "evidence_log_sha256": {
+    "build.log": "9c210d08f9ddfd099a9ed6ae2d2a8602ad7b8d9b90f521803f421689fc09685c",
+    "verify-assets.log": "4535ae0408110435f5ca9cb3e08a19c721cdaf692b83854b29e7c94d96c851fb",
+    "native-supported.log": "f7026e9350d2353f5c3178be0debef53514405b6209e1c631d69311ad8501418",
+    "headless.log": "cffc8c12921da0ce0b9ce1fcf80d2c3e7e23e59992316e41b04b6eefd337e948",
+    "tui-binary-result.log": "067b2fdb75b81f791ee31d311cdbc9509ecf102fbbe9bdaea4b60ced468fab4d",
+    "wycode-tests.log": "bd3d528673da6d4665464ae2959acbc84cdd65b539265a92f17ec56bdf90ad01",
+    "check.log": "7eb5b2d6b7a8c381a925150bbac5c25370665baa78527c5cf1cf9ca3fb7ba9d3"
+  }
+}

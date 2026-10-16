@@ -24,11 +24,11 @@ To inspect the installer first, download it from this repository and run it loca
 
 ```sh
 curl -fsSL https://raw.githubusercontent.com/capibaras001/wycode/main/install.sh -o install.sh
-WYCODE_VERSION=v0.1.6 WYCODE_INSTALL_DIR="$HOME/bin" bash install.sh
+WYCODE_VERSION=v0.1.7 WYCODE_INSTALL_DIR="$HOME/bin" bash install.sh
 ```
 
 ```powershell
-$env:WYCODE_VERSION = 'v0.1.6'
+$env:WYCODE_VERSION = 'v0.1.7'
 $env:WYCODE_INSTALL_DIR = "$env:USERPROFILE\bin"
 irm https://raw.githubusercontent.com/capibaras001/wycode/main/install.ps1 | iex
 ```
@@ -66,6 +66,8 @@ wycode scan https://your-authorized-target.example --goal "Validate account isol
 
 Run assessments only against systems you own or are authorized to test. `wycode` opens the native interactive TUI. `wycode scan <target>` runs headlessly; `--dry-run` prints the scan plan without running commands or contacting the model. Headless exit codes are `0` for a clean assessment, `2` for findings above medium severity, and `1` for an infrastructure failure or truncated assessment.
 
+The WYCODE home screen offers Chat, Assess project, and Assess target; each choice prepares an editable prompt before sending. `/chat <question>` explicitly asks a question without starting an assessment. Local source filenames, file/line references such as `README.md:12`, and existing local paths remain chat input.
+
 In the TUI, `/start <target>` chooses the assessment scope. `/goal <objective>` adds a persistent objective to the running assessment, or starts one in the current project directory. `/goal` shows recorded status. The main agent defines success criteria as required plan tasks and continues toward them; each criterion needs a completed result and evidence. Children contribute to the same plan. Missing access, cancelled work and execution limits produce incomplete results with specific next actions.
 
 The main agent can choose a WY-CODE child model with `create_agent.model`: `glm-5.3`, `kimi-k3` (Kimi K3), `kimi-for-coding`, or `glm-5.3-flash`. The choice is saved with native child Sessions; omission inherits the parent model. Routing guidance suggests complex validation, broad-context synthesis, source/test work, and bounded triage respectively; these are defaults rather than benchmark guarantees.
@@ -87,6 +89,10 @@ The old leading `--nodocker` flag is accepted for compatibility; Bash is now the
 ## Assessment reports
 
 When an assessment ends, WYCODE saves `report.md` and `report.json` and shows the report in chat or headless output. Reports include findings, the assessment summary, documented coverage, unresolved work, and next options. Unverified candidates remain separate from findings. Failed or unfinished child tasks produce an incomplete report instead of a successful assessment.
+
+The session shows recorded progress counts, running and blocked tasks, and retry reasons. Reopening a session restores recorded plan progress even when its message is on an older page. Reports with structured findings offer severity filtering, individual evidence, and the full original report through clickable controls or `/findings`, `/evidence`, and `/report`.
+
+New finding notes require a supported severity and nonempty evidence; invalid updates preserve the existing note. Historical notes remain readable, and unverified candidates remain separate from findings.
 
 For multi-step assessments, `scan_plan` tracks the target, hypothesis, validation criterion, priority, owner, dependencies, and result for each task. Ready work waits for its prerequisites. Reopening a prerequisite reopens dependent completions for review. Required unfinished work, including cancelled work, prevents a complete report. An explicit partial closure records its reason and keeps the report incomplete; optional checks remain visible as next options.
 
@@ -127,4 +133,4 @@ wycode includes opencode and its terminal interface under the [MIT License](LICE
 
 ## Development changes
 
-The [usability source changeset](changes/usability/README.md) contains the scoped source patch, baseline hashes, and validation results for explicit chat/project/target entry, progress restoration, evidence validation, and report controls. It is a development change package; the existing release binaries remain v0.1.6.
+The [usability source changeset](changes/usability/README.md) contains the scoped source patch, baseline hashes, and validation results for explicit chat/project/target entry, progress restoration, evidence validation, and report controls. The reviewed changeset is included in [v0.1.7](https://github.com/capibaras001/wycode/releases/tag/v0.1.7).

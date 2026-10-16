@@ -1,6 +1,6 @@
 # WYCODE usability changes
 
-This source changeset makes assessment entry, progress, and reports easier to use. The changes are applied and tested in the WYCODE development checkout. This repository distributes installers and binaries, so the reviewable source delta is published here without the development checkout's unrelated work or history. It does not replace the existing v0.1.6 release binaries.
+This source changeset makes assessment entry, progress, and reports easier to use. The changes are applied and tested in the WYCODE development checkout. This repository distributes installers and binaries, so the reviewable source delta is published here without the development checkout's unrelated work or history. The reviewed changeset is included in the [v0.1.7 binary release](https://github.com/capibaras001/wycode/releases/tag/v0.1.7). The original patch and baseline hashes remain unchanged for traceability.
 
 ## Behavior
 
@@ -26,7 +26,7 @@ The final validation ran against the actual development checkout:
 
 The narrow-terminal regressions cover the home entry choices, task counts/blockers/retries, and report display at 44 columns. The interaction tests cover severity selection, evidence selection, return to the full report, project selection after `/cd`, and progress restoration from an older message page. Tests use local fixtures and recorded/fake model execution; they do not run assessments against external targets.
 
-The package skips remain environmental/platform cases. TUI fixture teardown can emit temporary session-tab lock-file warnings; the test outcomes above are the runner's final counts. The changes have not been benchmarked for model quality or speed, and no new release binary was built for this changeset.
+The package skips remain environmental/platform cases. TUI fixture teardown can emit temporary session-tab lock-file warnings; the test outcomes above are the runner's final counts. The changes have not been benchmarked for model quality or speed, and its original source-validation pass did not build binaries. The subsequent v0.1.7 release verification covers the compiled artifacts.
 
 ## Applying the delta
 

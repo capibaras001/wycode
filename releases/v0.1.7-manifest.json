@@ -1,0 +1,47 @@
+[
+  {
+    "name": "wycode-linux-arm64.tar.gz",
+    "size": 79809396,
+    "sha256": "a6c055fd6071635f65a165b9254482f71a4b96e877de920240456d68ca439273"
+  },
+  {
+    "name": "wycode-linux-amd64.tar.gz",
+    "size": 81188635,
+    "sha256": "0c1701ab917387f243b0890b0519e269aecb93b643b9085f9145820cbe82261b"
+  },
+  {
+    "name": "wycode-linux-arm64-musl.tar.gz",
+    "size": 78014260,
+    "sha256": "e2e1975923f5384f05ee459da8e5073be90a1117051c7c8a84247dc21287d35c"
+  },
+  {
+    "name": "wycode-linux-amd64-musl.tar.gz",
+    "size": 79701392,
+    "sha256": "0eaf350ad909d2e3d2f20db51e3c189766e1fb3e3df6e5d11fbdcfa2c18c8215"
+  },
+  {
+    "name": "wycode-darwin-arm64.tar.gz",
+    "size": 63948715,
+    "sha256": "e3232b0084dc2597cf7f9baa0654c6ad1d8d0e44ae1e261f103706470ff198f5"
+  },
+  {
+    "name": "wycode-darwin-amd64.tar.gz",
+    "size": 71544607,
+    "sha256": "e7446d3ec76265b5642f4ce9e9483ace4805acf574a6540548733081f66b45dc"
+  },
+  {
+    "name": "wycode-windows-arm64.zip",
+    "size": 76804231,
+    "sha256": "b305281fb92297bb1dfc58ed4166d9c25522401404815d7a7ad17eb00fa26e52"
+  },
+  {
+    "name": "wycode-windows-amd64.zip",
+    "size": 82585247,
+    "sha256": "4bb3906ced57452653254d72a43248f783f2214532e13c5cd9ed9095bd70c427"
+  },
+  {
+    "name": "SHA256SUMS",
+    "size": 746,
+    "sha256": "ea6a0342e1f9e22cac444f0590e80f17527a29508f61b4a592858969738b5b12"
+  }
+]
