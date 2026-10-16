@@ -1,6 +1,93 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+bash_supported() {
+  local executable
+  executable=$(command -v "$1" 2>/dev/null) || return 1
+  LC_ALL=C "$executable" --version 2>/dev/null | awk '
+    /^GNU bash, version [0-9]+[.][0-9]+/ {
+      split($4, version, ".")
+      supported = version[1] + 0 > 5 || (version[1] + 0 == 5 && version[2] + 0 >= 2)
+      exit
+    }
+    END { exit !supported }
+  '
+}
+
+find_bash() {
+  local directory prefix brew
+  local directories=()
+  selected_bash=
+  if [ -n "${WYCODE_BASH:-}" ]; then
+    if bash_supported "$WYCODE_BASH"; then selected_bash=$WYCODE_BASH; return 0; fi
+    return 1
+  fi
+  IFS=: read -r -a directories <<< "$PATH"
+  for directory in "${directories[@]}"; do
+    if bash_supported "${directory:-.}/bash"; then selected_bash=${directory:-.}/bash; return 0; fi
+  done
+  brew=$(command -v brew 2>/dev/null || true)
+  prefix=
+  if [ -n "$brew" ]; then prefix=$("$brew" --prefix bash 2>/dev/null || true); fi
+  for directory in "${HOMEBREW_PREFIX:+$HOMEBREW_PREFIX/bin}" "${prefix:+$prefix/bin}" /opt/homebrew/bin /usr/local/bin; do
+    if [ -n "$directory" ] && bash_supported "$directory/bash"; then selected_bash=$directory/bash; return 0; fi
+  done
+  return 1
+}
+
+run_privileged() {
+  if [ "$(id -u)" = 0 ]; then "$@"; return $?; fi
+  if command -v sudo >/dev/null 2>&1; then
+    if sudo -n true 2>/dev/null; then sudo -n "$@"; return $?; fi
+    if ( : </dev/tty ) 2>/dev/null; then sudo "$@" </dev/tty; return $?; fi
+  fi
+  printf '%s\n' 'Installing Bash requires root or sudo authorization. Install Bash with your package manager, then rerun this installer.' >&2
+  return 1
+}
+
+ensure_bash() {
+  local manager candidate
+  if find_bash; then return 0; fi
+  printf '%s\n' 'Preparing GNU Bash 5.2 or newer...'
+  if [ "$platform" = darwin ]; then
+    manager=$(command -v brew 2>/dev/null || true)
+    if [ -z "$manager" ]; then
+      printf '%s\n' 'Bash 5.2+ requires Homebrew on macOS. Install Homebrew or make brew available on PATH, then rerun this installer.' >&2
+      return 1
+    fi
+    if "$manager" list --versions bash >/dev/null 2>&1; then
+      "$manager" upgrade bash || { printf '%s\n' 'Homebrew could not upgrade Bash.' >&2; return 1; }
+    else
+      "$manager" install bash || { printf '%s\n' 'Homebrew could not install Bash.' >&2; return 1; }
+    fi
+  else
+    manager=
+    for candidate in apt-get dnf apk pacman zypper; do
+      if command -v "$candidate" >/dev/null 2>&1; then manager=$candidate; break; fi
+    done
+    case "$manager" in
+      apt-get)
+        run_privileged apt-get update && run_privileged apt-get install -y bash || { printf '%s\n' 'Could not install or upgrade Bash with apt-get.' >&2; return 1; } ;;
+      dnf)
+        run_privileged dnf install -y bash || { printf '%s\n' 'Could not install or upgrade Bash with dnf.' >&2; return 1; } ;;
+      apk)
+        run_privileged apk add --no-cache --upgrade bash || { printf '%s\n' 'Could not install or upgrade Bash with apk.' >&2; return 1; } ;;
+      pacman)
+        run_privileged pacman -S --needed --noconfirm bash || { printf '%s\n' 'Could not install or upgrade Bash with pacman. Refresh your system packages and retry.' >&2; return 1; } ;;
+      zypper)
+        run_privileged zypper --non-interactive install bash || { printf '%s\n' 'Could not install or upgrade Bash with zypper.' >&2; return 1; } ;;
+      *)
+        printf '%s\n' 'Bash 5.2+ is required. No supported package manager was found (apt-get, dnf, apk, pacman, zypper). Install Bash and rerun this installer.' >&2
+        return 1 ;;
+    esac
+  fi
+  if ! find_bash; then
+    printf '%s\n' 'GNU Bash 5.2+ is still unavailable after package installation. Check your repository version and WYCODE_BASH override. The existing WYCODE installation was preserved.' >&2
+    return 1
+  fi
+  printf 'Bash ready: %s\n' "$selected_bash"
+}
+
 main() {
   case "$(uname -s)" in
     Linux) platform=linux ;;
@@ -77,6 +164,7 @@ main() {
       exit 1
     fi
   done
+  ensure_bash || exit 1
   mkdir -p "$install_dir"
   mkdir -p "$install_dir/wycode-docs"
   for entry in LICENSE APACHE-2.0 NOTICE README.md; do

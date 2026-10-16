@@ -16,17 +16,19 @@ Windows, in PowerShell:
 irm https://raw.githubusercontent.com/capibaras001/wycode/main/install.ps1 | iex
 ```
 
-The installers select your platform, download the latest release, verify its SHA256 against the release's `SHA256SUMS`, and install to `~/.local/bin` (`%USERPROFILE%\.local\bin` on Windows). They print PATH instructions when needed. Installation of the executable does not require sudo. Git Bash/MSYS users should use the PowerShell command above.
+The installers select your platform, download the latest release, verify its SHA256 against the release's `SHA256SUMS`, and install to `~/.local/bin` (`%USERPROFILE%\.local\bin` on Windows). They prepare GNU Bash 5.2 or newer before replacing an existing installation, using an existing Homebrew on macOS, apt-get/dnf/apk/pacman/zypper on Linux, or WinGet's Git.Git package on Windows. Updating Git Bash through WinGet also updates Git for Windows. Installing dependencies may require administrator authorization; the executable itself installs to your user directory. The installers do not install Homebrew/WinGet or change your login shell. Git Bash/MSYS users should use the PowerShell command above.
+
+If a manager is missing, authorization fails, or its repository cannot provide Bash 5.2+, installation stops with instructions and preserves the existing WYCODE executable and documents. Dependencies already installed are retained. Repositories with older Bash require an administrator-provided supported Bash; WYCODE does not upgrade the whole operating system.
 
 To inspect the installer first, download it from this repository and run it locally. To select a version or install location:
 
 ```sh
 curl -fsSL https://raw.githubusercontent.com/capibaras001/wycode/main/install.sh -o install.sh
-WYCODE_VERSION=v0.1.5 WYCODE_INSTALL_DIR="$HOME/bin" bash install.sh
+WYCODE_VERSION=v0.1.6 WYCODE_INSTALL_DIR="$HOME/bin" bash install.sh
 ```
 
 ```powershell
-$env:WYCODE_VERSION = 'v0.1.5'
+$env:WYCODE_VERSION = 'v0.1.6'
 $env:WYCODE_INSTALL_DIR = "$env:USERPROFILE\bin"
 irm https://raw.githubusercontent.com/capibaras001/wycode/main/install.ps1 | iex
 ```
@@ -72,7 +74,11 @@ The main agent can choose a WY-CODE child model with `create_agent.model`: `glm-
 
 ## Bash execution
 
-Assessment commands run directly through Bash in the selected project directory with your account's permissions and environment. File tools read and write real host files. Bash must be on PATH; on Windows, install Git Bash and add its `bin` directory to PATH. Security tools, Python packages, browsers, and proxies use the host's existing setup and are not provisioned automatically.
+Assessment commands run directly through GNU Bash 5.2 or newer in the selected project directory with your account's permissions and environment. File tools read and write real host files. WYCODE checks the Bash executable before native/headless assessments and again when recovering them after a restart. It searches PATH and standard Homebrew/Git Bash locations, skipping unsupported versions. An assessment uses the selected absolute executable path for its lifetime. Security tools, Python packages, browsers, and proxies use the host's existing setup and are not provisioned automatically.
+
+Set `WYCODE_BASH` to an absolute executable path for a custom installation, for example `WYCODE_BASH=/opt/homebrew/bin/bash wycode` or `$env:WYCODE_BASH = 'C:\Program Files\Git\bin\bash.exe'` in PowerShell. This override is authoritative: an invalid or old executable fails instead of silently choosing another one. If package installation does not update the overridden path, correct or unset the override and rerun the installer.
+
+WYCODE never installs dependencies during an assessment. If Bash is unavailable or too old, it reports the detected version/path and asks you to rerun the installer. You can still open the TUI, read reports or `/goal` status, log in, and use help/version or dry-run without a supported Bash. Ordinary native chat and OpenCode shell selection outside assessments retain their existing behavior.
 
 Each shell call starts a fresh Bash process. Changes to shell variables or the working directory do not persist between calls. Native assessments retain their permission prompts. Cancellation stops owned command processes and leaves assessment files and reports intact. The default TUI uses a private server for its lifetime.
 
@@ -113,7 +119,7 @@ Linux musl builds require `libstdc++`. On Alpine, install the shell/download pre
 
 Each archive contains `wycode` or `wycode.exe`, `LICENSE`, `APACHE-2.0`, `NOTICE`, and `README.md` at its root. Binaries include the runtime; a separate Bun installation and source checkout are unnecessary. Other architectures, 32-bit systems, and other operating systems are unsupported.
 
-Releases are cross-compiled. Installer fixtures exercise platform selection, downloads, checksums, and failed-install preservation in temporary directories. Cross-compilation and fixture checks do not establish native end-to-end assessment support on every target; Windows/macOS signing and notarization are not provided.
+Releases are cross-compiled. Installer fixtures exercise platform selection, downloads, checksums, dependency provisioning, and failed-install preservation in temporary directories. PowerShell installer fixtures can also run on macOS with an isolated PowerShell runtime; that does not establish native Windows execution. Cross-compilation and fixture checks do not establish native end-to-end assessment support on every target; Windows/macOS signing and notarization are not provided.
 
 ## License and attribution
 

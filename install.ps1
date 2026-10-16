@@ -4,6 +4,75 @@
     if ($env:OS -ne 'Windows_NT') {
         throw 'Use install.sh on Linux or macOS. This installer is for Windows.'
     }
+    function Resolve-WycodeBash([string]$Executable) {
+        if (-not $Executable) { return $null }
+        $command = Get-Command -Name $Executable -CommandType Application -ErrorAction SilentlyContinue
+        if (-not $command) { return $null }
+        $probe = New-Object System.Diagnostics.Process
+        try {
+            $probe.StartInfo.FileName = $command.Source
+            $probe.StartInfo.Arguments = '--version'
+            $probe.StartInfo.UseShellExecute = $false
+            $probe.StartInfo.RedirectStandardOutput = $true
+            $probe.StartInfo.RedirectStandardError = $true
+            $probe.StartInfo.CreateNoWindow = $true
+            $probe.StartInfo.EnvironmentVariables['LC_ALL'] = 'C'
+            if (-not $probe.Start()) { return $null }
+            $stdout = $probe.StandardOutput.ReadToEndAsync()
+            $stderr = $probe.StandardError.ReadToEndAsync()
+            $probe.WaitForExit()
+            $output = $stdout.GetAwaiter().GetResult()
+            [void]$stderr.GetAwaiter().GetResult()
+            if ($probe.ExitCode -ne 0) { return $null }
+            foreach ($line in ($output -split '\r?\n')) {
+                if ($line -match '^GNU bash, version (\d+)\.(\d+)(?:\.(\d+))?') {
+                    if ([int]$Matches[1] -gt 5 -or ([int]$Matches[1] -eq 5 -and [int]$Matches[2] -ge 2)) {
+                        return $command.Source
+                    }
+                    return $null
+                }
+            }
+        }
+        catch { return $null }
+        finally { $probe.Dispose() }
+        return $null
+    }
+    function Find-WycodeBash {
+        if ($env:WYCODE_BASH) { return Resolve-WycodeBash $env:WYCODE_BASH }
+        $candidates = @()
+        $git = Get-Command git -CommandType Application -ErrorAction SilentlyContinue
+        if ($git) { $candidates += Join-Path (Split-Path (Split-Path $git.Source -Parent) -Parent) 'bin\bash.exe' }
+        foreach ($directory in @($env:ProgramFiles, $env:ProgramW6432, ${env:ProgramFiles(x86)})) {
+            if ($directory) { $candidates += Join-Path $directory 'Git\bin\bash.exe' }
+        }
+        if ($env:LOCALAPPDATA) { $candidates += Join-Path $env:LOCALAPPDATA 'Programs\Git\bin\bash.exe' }
+        foreach ($directory in ($env:PATH -split [Regex]::Escape([string][IO.Path]::PathSeparator))) {
+            if ($directory) { $candidates += Join-Path $directory 'bash.exe' }
+        }
+        foreach ($candidate in ($candidates | Select-Object -Unique)) {
+            $supported = Resolve-WycodeBash $candidate
+            if ($supported) { return $supported }
+        }
+        return $null
+    }
+    function Ensure-WycodeBash {
+        if (Find-WycodeBash) { return }
+        if (-not (Get-Command winget -ErrorAction SilentlyContinue)) {
+            throw 'GNU Bash 5.2+ requires Git Bash. Make WinGet available, then rerun this installer, or install Git for Windows and set WYCODE_BASH to its bash.exe. The existing WYCODE installation was preserved.'
+        }
+        Write-Host 'Preparing GNU Bash 5.2+ through Git for Windows...'
+        & winget list --id Git.Git -e --source winget --accept-source-agreements >$null
+        $operation = if ($LASTEXITCODE -eq 0) { 'upgrade' } else { 'install' }
+        & winget $operation --id Git.Git -e --source winget --accept-package-agreements --accept-source-agreements
+        if ($LASTEXITCODE -ne 0) {
+            throw "WinGet could not install or upgrade Git Bash (exit $LASTEXITCODE). The existing WYCODE installation was preserved."
+        }
+        $supported = Find-WycodeBash
+        if (-not $supported) {
+            throw 'GNU Bash 5.2+ is still unavailable after Git installation. Check WYCODE_BASH and the Git Bash install location. The existing WYCODE installation was preserved.'
+        }
+        Write-Host "Bash ready: $supported"
+    }
     $architecture = $env:PROCESSOR_ARCHITEW6432
     if (-not $architecture) { $architecture = $env:PROCESSOR_ARCHITECTURE }
     $arch = switch -Regex ($architecture) {
@@ -61,6 +130,7 @@
             }
         }
         finally { $zip.Dispose() }
+        Ensure-WycodeBash
         $installed = Join-Path $installDir 'wycode.exe'
         if (Test-Path -LiteralPath $installed -PathType Leaf) {
             Write-Host 'Stopping the existing wycode background service before upgrading...'
