@@ -124,3 +124,7 @@ Releases are cross-compiled. Installer fixtures exercise platform selection, dow
 ## License and attribution
 
 wycode includes opencode and its terminal interface under the [MIT License](LICENSE), copyright (c) 2025 opencode. The wycode assessment package is licensed under [Apache-2.0](APACHE-2.0). Its skill packs were ported from [strix](https://github.com/usestrix/strix), copyright 2025 usestrix; see [NOTICE](NOTICE). Upstream and third-party components retain their respective licenses.
+
+## Development changes
+
+The [usability source changeset](changes/usability/README.md) contains the scoped source patch, baseline hashes, and validation results for explicit chat/project/target entry, progress restoration, evidence validation, and report controls. It is a development change package; the existing release binaries remain v0.1.6.

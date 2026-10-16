@@ -1,0 +1,2 @@
+# Unified patches use a space prefix even for empty context lines.
+changes/usability/*.patch -whitespace

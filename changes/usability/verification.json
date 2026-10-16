@@ -1,0 +1,15 @@
+{
+  "wycode": "341 passed, 17 skipped, 0 failed",
+  "core": "36 passed, 0 failed",
+  "focused_tui": "11 passed, 0 failed",
+  "tui": "1,489 passed, 4 skipped, 0 failed",
+  "check": "37 tasks passed",
+  "runtime": "Bun 1.4.3-canary.1 (1332495a4)",
+  "log_sha256": {
+    "wycode": "2031c843067a4aec816fa654d15c632a2b8e24698bd928c0d215b873832995c6",
+    "core": "6b48e3e30e0ddd84146bd56c2d78e890188b2c3d42f4a832fd4fbc4a41a757d4",
+    "focused_tui": "9674213adafafe4e5d6db84de1b1f77c18f4be57db10625690fc1a50ea3cb2c3",
+    "tui": "5a614941be6be382f603e943781586c0de30ae4389b40496429804c3c9cfa310",
+    "check": "9aa4fbc57cb0e5d76e4b8a21d9dd2b7fccdd21faa337d8063d4f54259b50ef1c"
+  }
+}
