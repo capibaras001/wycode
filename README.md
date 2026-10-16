@@ -22,11 +22,11 @@ To inspect the installer first, download it from this repository and run it loca
 
 ```sh
 curl -fsSL https://raw.githubusercontent.com/capibaras001/wycode/main/install.sh -o install.sh
-WYCODE_VERSION=v0.1.4 WYCODE_INSTALL_DIR="$HOME/bin" bash install.sh
+WYCODE_VERSION=v0.1.5 WYCODE_INSTALL_DIR="$HOME/bin" bash install.sh
 ```
 
 ```powershell
-$env:WYCODE_VERSION = 'v0.1.4'
+$env:WYCODE_VERSION = 'v0.1.5'
 $env:WYCODE_INSTALL_DIR = "$env:USERPROFILE\bin"
 irm https://raw.githubusercontent.com/capibaras001/wycode/main/install.ps1 | iex
 ```
@@ -59,9 +59,16 @@ The interactive TUI also supports native provider login and model selection. WY-
 wycode --version
 wycode scan https://your-authorized-target.example --dry-run
 wycode scan https://your-authorized-target.example --model kimi-k3 --effort high
+wycode scan https://your-authorized-target.example --goal "Validate account isolation with recorded positive and negative controls"
 ```
 
 Run assessments only against systems you own or are authorized to test. `wycode` opens the native interactive TUI. `wycode scan <target>` runs headlessly; `--dry-run` prints the scan plan without running commands or contacting the model. Headless exit codes are `0` for a clean assessment, `2` for findings above medium severity, and `1` for an infrastructure failure or truncated assessment.
+
+In the TUI, `/start <target>` chooses the assessment scope. `/goal <objective>` adds a persistent objective to the running assessment, or starts one in the current project directory. `/goal` shows recorded status. The main agent defines success criteria as required plan tasks and continues toward them; each criterion needs a completed result and evidence. Children contribute to the same plan. Missing access, cancelled work and execution limits produce incomplete results with specific next actions.
+
+The main agent can choose a WY-CODE child model with `create_agent.model`: `glm-5.3`, `kimi-k3` (Kimi K3), `kimi-for-coding`, or `glm-5.3-flash`. The choice is saved with native child Sessions; omission inherits the parent model. Routing guidance suggests complex validation, broad-context synthesis, source/test work, and bounded triage respectively; these are defaults rather than benchmark guarantees.
+
+`tool_catalog` lists/searches the current advertised tools and returns their input schemas. Agents use dedicated tools and MCP discovery for matching tasks, and Bash for installed processes, builds and scanners. Discovery does not grant permissions or execute the selected tool.
 
 ## Bash execution
 
@@ -74,6 +81,12 @@ The old leading `--nodocker` flag is accepted for compatibility; Bash is now the
 ## Assessment reports
 
 When an assessment ends, WYCODE saves `report.md` and `report.json` and shows the report in chat or headless output. Reports include findings, the assessment summary, documented coverage, unresolved work, and next options. Unverified candidates remain separate from findings. Failed or unfinished child tasks produce an incomplete report instead of a successful assessment.
+
+For multi-step assessments, `scan_plan` tracks the target, hypothesis, validation criterion, priority, owner, dependencies, and result for each task. Ready work waits for its prerequisites. Reopening a prerequisite reopens dependent completions for review. Required unfinished work, including cancelled work, prevents a complete report. An explicit partial closure records its reason and keeps the report incomplete; optional checks remain visible as next options.
+
+`finding_chain` connects existing finding notes into candidate paths and creates optional verification tasks for their links. Each verified link requires source evidence plus a recorded expected result, observed result, and link evidence. Changing or deleting source notes invalidates stale proof and reopens verification. Exact duplicate findings consolidate with source provenance; similar findings with distinct evidence remain separate. Chains are reported separately and never automatically raise finding severities.
+
+Roots and children share this bookkeeping. Native recovery restores task IDs, source revisions, chain proofs, and the order of their updates without repeating host commands or network requests. Planning tools preserve the existing assessment scope and permissions.
 
 Completed assessments are not rerun after a server restart. Legacy Docker assessments require a new `/start <target>` assessment before commands can run through Bash.
 
